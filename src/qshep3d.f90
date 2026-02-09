@@ -26,7 +26,9 @@ module quadratic_shepard_3d
         real, allocatable    :: a(:,:)
         integer, allocatable :: lcell(:,:,:)
         integer, allocatable :: lnext(:)
+        real                 :: normX = 1.0, normY = 1.0, normZ = 1.0, normF = 1.0
     contains
+        procedure :: normalize_mesh    => normalize_mesh_3d
         procedure :: create_mesh       => create_mesh_3d
         procedure :: interpolate_point => interpolate_point_3d
         procedure :: gradient_point    => gradient_point_3d
@@ -55,6 +57,24 @@ subroutine cleanup_mesh_3d( this )
     this%error_code = code_no_errors
 
 end subroutine cleanup_mesh_3d
+
+
+subroutine normalize_mesh_3d(this, normX, normY, normZ, normF)
+    !! The 661 algorithm does not like very different scaling on the
+    !! dimensions, so for now let this be a user configuration.
+    !! Optimally this should be an automatic normalization based on
+    ! the data.
+    class(qshep_3d), intent(inout) :: this
+    real, intent(in)               :: normX
+    real, intent(in)               :: normY
+    real, intent(in)               :: normZ
+    real, intent(in)               :: normF
+
+    this%normX = normX
+    this%normY = normY
+    this%normZ = normZ
+    this%normF = normF
+end subroutine
 
 ! create_mesh_3d --
 !     Create an interpolation mesh based on the scattered data
@@ -98,10 +118,10 @@ subroutine create_mesh_3d( this, x, y, z, f )
 
     this%error_code = code_no_errors
 
-    this%x  = x
-    this%y  = y
-    this%z  = z
-    this%f  = f
+    this%x  = x * this%normX
+    this%y  = y * this%normY
+    this%z  = z * this%normZ
+    this%f  = f * this%normF
 
     n       = size(x)
     nr      = min( 1.0, ( n / 3.0 ) ** (1.0/3.0) )
@@ -158,6 +178,7 @@ real function interpolate_point_3d( this, px, py, pz )
     real, intent(in)               :: pz
 
     integer                        :: ierr
+    real                           :: norm_px, norm_py, norm_pz
 
    ! interface
    !     real function qs2val( px,py,n,x,y,f,nr,lcell,lnext,xmin,ymin,dx,dy,rmax,rsq,a)
@@ -172,9 +193,16 @@ real function interpolate_point_3d( this, px, py, pz )
    !     end function qs2val
    ! end interface
 
-    interpolate_point_3d = qs3val( px, py, pz, size(this%x), this%x, this%y, this%z, this%f, &
-                                   this%nr, this%lcell, this%lnext, this%xyzmin,             &
-                                   this%xyzdel, this%rmax, this%rsq, this%a, ierr            )
+    norm_px = px * this%normX
+    norm_py = py * this%normY
+    norm_pz = pz * this%normZ
+
+    interpolate_point_3d = qs3val( norm_px, norm_py, norm_pz,                     &
+                                   size(this%x), this%x, this%y, this%z, this%f,  &
+                                   this%nr, this%lcell, this%lnext, this%xyzmin,  &
+                                   this%xyzdel, this%rmax, this%rsq, this%a, ierr )
+
+    interpolate_point_3d = interpolate_point_3d / this%normF
 
     select case ( ierr )
         case ( 1 )
